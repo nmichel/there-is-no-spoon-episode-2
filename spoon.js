@@ -69,9 +69,7 @@ function buildGraphFromInput() {
     return [total, nodes];
 }
 
-var buildGraph = new Date();
 var [total, nodes] = buildGraphFromInput();
-printErr("GRAPH", (new Date()) - buildGraph);
 
 function getChoicesFromNode(node) {
     var r =
@@ -89,9 +87,7 @@ function buildChoices(nodes) {
     }
 }
 
-var buildChoicesDate = new Date();
 buildChoices(nodes);
-printErr("CHOICES", (new Date()) - buildChoicesDate);
 
 var activeNodes = new Array(nodes.length).fill(false);
 
@@ -223,7 +219,6 @@ for (var i = 0; i < sortedNodes.length; ++i) {
     var stopPos = copyChoices(root.choices, 0);
     activeNodes[root.id] = true;
     stack.push({id: ctxtNextId++, op: null, node: root, startPos: 0, stopPos: stopPos});
-    printErr('Root ', root);
     while(total > 0 && stack.length > 0) {
         var ctxt = stack[stack.length-1];
 
@@ -237,7 +232,6 @@ for (var i = 0; i < sortedNodes.length; ++i) {
                 activeNodes[ctxt.node.id] = false;
             }
 
-            printErr('POP ', ctxt.id);
             stack.pop();
             continue; // <== 
         }
@@ -261,7 +255,6 @@ for (var i = 0; i < sortedNodes.length; ++i) {
             activeNodes[target.id] = true;
         }
         total -= 2;
-        printErr('PUSH ', newCtxt.id);
         stack.push(newCtxt);
     }
     if (total === 0) {
