@@ -41,7 +41,6 @@ function buildGraphFromInput() {
     var width = parseInt(readline());
     var height = parseInt(readline());
     var markersW = new Array(width).fill(null);
-    var graph = new Map();
     var total = 0;
     var nodes = [];
 
@@ -57,7 +56,6 @@ function buildGraphFromInput() {
             total += value;
             var node = new Node(j, i, value);
             nodes.push(node);
-            graph.set(node.getKey(), node);
             if (markerH !== null) {
                 markerH.link(RIGHT, node);
             }
@@ -68,11 +66,11 @@ function buildGraphFromInput() {
             markersW[j] = node;
         }
     }
-    return [total, nodes, graph];
+    return [total, nodes];
 }
 
 var buildGraph = new Date();
-var [total, nodes, graph] = buildGraphFromInput();
+var [total, nodes] = buildGraphFromInput();
 printErr("GRAPH", (new Date()) - buildGraph);
 
 function getChoicesFromNode(node) {
@@ -85,7 +83,8 @@ function getChoicesFromNode(node) {
 }
 
 function buildChoices(nodes) {
-    for (var [k, v] of graph.entries()) {
+    for (var i = 0; i < nodes.length; ++i) {
+        var v = nodes[i];
         v.choices = getChoicesFromNode(v);
     }
 }
@@ -233,7 +232,7 @@ for (var i = 0; i < sortedNodes.length; ++i) {
                 rollbackOperation(ctxt.op);
                 total += 2;
             }
-
+            
             if (ctxt.node !== null) {
                 activeNodes[ctxt.node.id] = false;
             }
