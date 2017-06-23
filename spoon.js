@@ -14,7 +14,6 @@ function Node(x, y, v) {
     this.id = nextId++;
     this.x = x;
     this.y = y;
-    this.key = [x, y];
     this.target = v;
     this.current = 0;
     this.links = new Array(4).fill(null);
@@ -29,9 +28,6 @@ Node.prototype.unlink = function(direction) {
     var other = this.links[direction]; 
     this.links[direction] = null;
     other.links[getOppositeDirection(direction)] = null;
-};
-Node.prototype.getKey = function() {
-    return this.key;
 };
 Node.prototype.toString = function() {
     return '[' + this.id + ' | ' + this.x + ', ' + this.y + ']';
