@@ -8,7 +8,7 @@ function getOppositeDirection(direction) {
     return oppositeDirections[direction];
 }
 
-var nextId = 1;
+var nextId = 0;
 
 function Node(x, y, v) {
     this.id = nextId++;
@@ -34,12 +34,7 @@ Node.prototype.getKey = function() {
     return this.key;
 };
 Node.prototype.toString = function() {
-    return '' + this.id;
-/*    
-    return '' + this.target + this.links.reduce(function(acc, val) {
-        return acc + (val === null ? '' : ('[' + val.x + ' | '+ val.y + '] '));
-    }, '');
-*/
+    return '[' + this.id + ' | ' + this.x + ', ' + this.y + ']';
 };
 
 function buildGraphFromInput() {
@@ -60,7 +55,7 @@ function buildGraphFromInput() {
             }
             var value = parseInt(c);
             total += value;
-            var node = new Node(i, j, value);
+            var node = new Node(j, i, value);
             nodes.push(node);
             graph.set(node.getKey(), node);
             if (markerH !== null) {
@@ -84,8 +79,8 @@ function getChoicesFromNode(node) {
     var r =
         node.links
             .map((v,i) => {return {from: node, to: v, dir: i}})
-            .filter(c => c.v !== null)
-            .sort((a, b) => a.target < b.target);
+            .filter(c => c.to !== null)
+            .sort((a, b) => b.to.target - a.to.target);
     return r;
 }
 
@@ -99,12 +94,13 @@ var buildChoicesDate = new Date();
 buildChoices(nodes);
 printErr("CHOICES", (new Date()) - buildChoicesDate);
 
-var stack = [];
+var activeNodes = new Array(nodes.length).fill(false);
 
 function isNodeInStack(node) {
-    printErr('stack size', stack.length);
-    return stack.find( ({node: n}) => n === node ) !== undefined;
+    return activeNodes[node.id];
 }
+
+var stack = [];
 
 function dumpStack(stack) {
     var res = new Map();
@@ -123,7 +119,7 @@ function dumpStack(stack) {
         }
     }
     for (var [[minX, minY, maxX, maxY], v] of res.entries()) {
-        print('' + minY + ' ' + minX + ' ' + maxY + ' ' + maxX + ' ' + v);
+        print('' + minX + ' ' + minY + ' ' + maxX + ' ' + maxY + ' ' + v);
     }
 }
 
@@ -220,12 +216,15 @@ function copyChoices(from, pos) {
     return pos+i;
 }
 
-var sortedNodes = nodes.sort((a, b) => a.target > b.target);
+var sortedNodes = nodes.sort((a, b) => b.target - a.target);
 
+var ctxtNextId = 0
 for (var i = 0; i < sortedNodes.length; ++i) {
     var root = sortedNodes[i];
     var stopPos = copyChoices(root.choices, 0);
-    stack.push({op: null, node: root, startPos: 0, stopPos: stopPos});
+    activeNodes[root.id] = true;
+    stack.push({id: ctxtNextId++, op: null, node: root, startPos: 0, stopPos: stopPos});
+    printErr('Root ', root);
     while(total > 0 && stack.length > 0) {
         var ctxt = stack[stack.length-1];
 
@@ -234,6 +233,12 @@ for (var i = 0; i < sortedNodes.length; ++i) {
                 rollbackOperation(ctxt.op);
                 total += 2;
             }
+
+            if (ctxt.node !== null) {
+                activeNodes[ctxt.node.id] = false;
+            }
+
+            printErr('POP ', ctxt.id);
             stack.pop();
             continue; // <== 
         }
@@ -244,18 +249,26 @@ for (var i = 0; i < sortedNodes.length; ++i) {
         }
         
         var target = choice.to;
-        var newCtxt = {};
+        var newCtxt = {id: ctxtNextId++};
         newCtxt.op = choice;
-        newCtxt.node = isNodeInStack(target) ? null : target;
         newCtxt.startPos = ctxt.startPos;
-        newCtxt.stopPos = newCtxt.node !== null ? copyChoices(target.choices, ctxt.stopPos) : ctxt.stopPos;
+        if (isNodeInStack(target)) {
+            newCtxt.node = null;
+            newCtxt.stopPos = ctxt.stopPos;
+        }
+        else {
+            newCtxt.node = target;
+            newCtxt.stopPos = copyChoices(target.choices, ctxt.stopPos);
+            activeNodes[target.id] = true;
+        }
         total -= 2;
-
+        printErr('PUSH ', newCtxt.id);
         stack.push(newCtxt);
     }
     if (total === 0) {
         dumpStack(stack);
         break; // <== 
     }
+    activeNodes[root.id] = false;
     stack.pop();
 }
