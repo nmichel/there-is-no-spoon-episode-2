@@ -118,27 +118,17 @@ class Player {
         }
     }
 
-    static class Context {
-        public Context(final int id, final Link op, final Node node, final int startPos, final int stopPos) {
-            this.id = id;
-            this.op = op;
-            this.node = node;
-            this.startPos = startPos;
-            this.stopPos = stopPos;
-        }
-
-        public final int id;
-        public final Link op;
-        public final Node node;
-        public int startPos;
-        public final int stopPos;
-    }
-
     private final Graph graph;
     private final boolean[] activeNodes;
     private int ctxtNextId = 0;
-    private final Stack<Context> stack = new Stack<Context>();
     private final Link[] choices = new Link[31*31*4];
+
+    final int[] stackId = new int[100];
+    final Link[] stackOp = new Link[100];
+    final Node[] stackNode = new Node[100];
+    final int[] stackStartPos = new int[100];
+    final int[] stackStopPos = new int[100];
+    int sp = -1;
 
     public Player(final Graph graph) {
         this.graph = graph;
@@ -154,8 +144,8 @@ class Player {
 
     private void dumpStack() {
         final HashMap<Integer, Integer> res = new HashMap<>();
-        for (int i = 1; i < stack.size(); ++i) {
-            final Link link = stack.get(i).op;
+        for (int i = 1; i <= sp; ++i) {
+            final Link link = stackOp[i];
             final int minX = Math.min(link.from.x, link.to.x);
             final int maxX = Math.max(link.from.x, link.to.x);
             final int minY = Math.min(link.from.y, link.to.y);
@@ -180,8 +170,8 @@ class Player {
     }
 
     boolean crossH(final Link operation) {
-        for (int i = 1; i < stack.size(); ++i) {
-            final Link op = stack.get(i).op;
+        for (int i = 1; i <= sp; ++i) {
+            final Link op = stackOp[i];
             if (op.from.y != op.to.y) {
                 continue; // <==  not an horizontal
             }
@@ -205,8 +195,8 @@ class Player {
     }
 
     boolean crossV(final Link operation) {
-        for (int i = 1; i < stack.size(); ++i) {
-            final Link op = stack.get(i).op;
+        for (int i = 1; i <= sp; ++i) {
+            final Link op = stackOp[i];
             if (op.from.x != op.to.x) {
                 continue; // <==  not an horizontal
             }
@@ -262,66 +252,79 @@ class Player {
         int i = 0;
         for (; i < from.size(); ++i) {
             choices[pos+i] = from.get(i);
+            System.err.println(String.format("Add route [%d] -> [%d]", choices[pos+i].from.id, choices[pos+i].to.id));
         }
         return pos+i;
     }
 
     public void play()  {
-        int totalCtxts = 0;
         int total = graph.total;
+        int maxSp = 0;
+
         final long startTime = System.nanoTime();
         for (int i = 0; i < graph.nodes.size(); ++i) {
             final Node root = graph.nodes.get(i);
+            System.err.println("root node " + root.id);
             final int stopPos = copyChoices(root.choices, 0);
             activeNodes[root.id] = true;
-            stack.push(new Context(ctxtNextId++, null, root, 0, stopPos));
-            ++totalCtxts;
-            while(total > 0 && !stack.empty()) {
-                final Context ctxt = stack.peek();
-
-                if (ctxt.startPos == ctxt.stopPos) {
-                    if (ctxt.op != null) {
-                        rollbackOperation(ctxt.op);
+            ++sp;
+            stackId[sp] = ctxtNextId++;
+            stackOp[sp] = null;
+            stackNode[sp] = root;
+            stackStartPos[sp] = 0;
+            stackStopPos[sp] = stopPos;
+            while(total > 0 && sp >= 0) {
+                if (stackStartPos[sp] == stackStopPos[sp]) {
+                    if (stackOp[sp] != null) {
+                        rollbackOperation(stackOp[sp]);
                         total += 2;
                     }
 
-                    if (ctxt.node != null) {
-                        activeNodes[ctxt.node.id] = false;
+                    if (stackNode[sp] != null) {
+                        System.err.println("unmark node " + stackNode[sp].id);
+                        activeNodes[stackNode[sp].id] = false;
                     }
 
-                    stack.pop();
+                    --sp;
                     continue; // <==
                 }
 
-                final Link choice = choices[ctxt.startPos++];
+                final Link choice = choices[stackStartPos[sp]++];
                 if (!commitOperation(choice)) {
                     continue; // <==
                 }
+                System.err.println(String.format("Use route [%d] -> [%d]", choice.from.id, choice.to.id));
 
                 final Node target = choice.to;
                 Node nextNode = null;
                 int newStopPos;
                 if (isNodeInStack(target)) {
-                    newStopPos = ctxt.stopPos;
+                    newStopPos = stackStopPos[sp];
                 }
                 else {
+                    System.err.println("mark node " + target.id);
                     nextNode = target;
-                    newStopPos = copyChoices(target.choices, ctxt.stopPos);
+                    newStopPos = copyChoices(target.choices, stackStopPos[sp]);
                     activeNodes[target.id] = true;
                 }
                 total -= 2;
-                ++totalCtxts;
-                stack.push(new Context(ctxtNextId++, choice, nextNode, ctxt.startPos, newStopPos));
+                ++sp;
+                maxSp = Math.max(maxSp, sp);
+                stackId[sp] = ctxtNextId++;
+                stackOp[sp] = choice;
+                stackNode[sp] = nextNode;
+                stackStartPos[sp] = stackStartPos[sp-1];
+                stackStopPos[sp] = newStopPos;
             }
 
             if (total == 0) {
-                System.err.println("Contextes " + totalCtxts);
-                System.err.println("Elapsed " + (System.nanoTime() - startTime));
+                System.err.println("Max SP " + maxSp);
+                System.err.println("Elapsed " + (System.nanoTime() - startTime)/1000000.0);
                 dumpStack();
                 break; // <==
             }
             activeNodes[root.id] = false;
-            stack.pop();
+            --sp;
         }
     }
 
