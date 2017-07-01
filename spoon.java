@@ -74,7 +74,9 @@ class Player {
             final Scanner in = new Scanner(System.in);
             
             final int width = in.nextInt(); // the number of cells on the X axis
+            System.err.println(String.format("IN %d", width));
             final int height = in.nextInt(); // the number of cells on the Y axis
+            System.err.println(String.format("IN %d", height));
             final Node[] markersW = new Node[width];
             if (in.hasNextLine()) {
                 in.nextLine();
@@ -82,6 +84,7 @@ class Player {
             for (int i = 0; i < height; i++) {
                 Node markerH = null;
                 String line = in.nextLine(); // width characters, each either a number or a '.'
+                System.err.println(String.format("IN %s", line));
                 for (int j = 0; j < line.length(); ++j) {
                     final char c = line.charAt(j);
 
