@@ -123,11 +123,11 @@ class Player {
     private int ctxtNextId = 0;
     private final Link[] choices = new Link[31*31*4];
 
-    final int[] stackId = new int[100];
-    final Link[] stackOp = new Link[100];
-    final Node[] stackNode = new Node[100];
-    final int[] stackStartPos = new int[100];
-    final int[] stackStopPos = new int[100];
+    final int[] stackId = new int[1000];
+    final Link[] stackOp = new Link[1000];
+    final Node[] stackNode = new Node[1000];
+    final int[] stackStartPos = new int[1000];
+    final int[] stackStopPos = new int[1000];
     int sp = -1;
 
     public Player(final Graph graph) {
