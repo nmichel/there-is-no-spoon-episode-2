@@ -255,9 +255,27 @@ class Player {
         int i = 0;
         for (; i < from.size(); ++i) {
             choices[pos+i] = from.get(i);
-            System.err.println(String.format("Add route [%d] -> [%d]", choices[pos+i].from.id, choices[pos+i].to.id));
+            // System.err.println(String.format("Add route [%d] -> [%d]", choices[pos+i].from.id, choices[pos+i].to.id));
         }
         return pos+i;
+    }
+
+    private String dumpChoices() {
+        StringBuilder res = new StringBuilder();
+        res.append("Choices [");
+        for (int i  = 0; i < stackStopPos[sp]; ++i) {
+            if (i == stackStartPos[sp])  {
+                res.append("*");
+            }
+            res
+                .append("(")
+                .append(choices[i].from.id)
+                .append(" -> ")
+                .append(choices[i].to.id)
+                .append(")");
+        }
+        res.append("]");
+        return res.toString();
     }
 
     public void play()  {
@@ -267,7 +285,7 @@ class Player {
         final long startTime = System.nanoTime();
         for (int i = 0; i < graph.nodes.size(); ++i) {
             final Node root = graph.nodes.get(i);
-            System.err.println("root node " + root.id);
+            // System.err.println("root node " + root.id);
             final int stopPos = copyChoices(root.choices, 0);
             activeNodes[root.id] = true;
             ++sp;
@@ -277,14 +295,16 @@ class Player {
             stackStartPos[sp] = 0;
             stackStopPos[sp] = stopPos;
             while(total > 0 && sp >= 0) {
+                // System.err.println(String.format("%d - %d - Loop - Node [%d] Range [%d -> %d] %s", stackId[sp], sp, stackNode[sp] != null ? stackNode[sp].id : -1, stackStartPos[sp], stackStopPos[sp], dumpChoices()));
                 if (stackStartPos[sp] == stackStopPos[sp]) {
                     if (stackOp[sp] != null) {
+                        // System.err.println(String.format("%d - Node [%d] Rollback [%d -> %d]", stackId[sp], stackNode[sp] != null ? stackNode[sp].id : -1, stackOp[sp].from.id, stackOp[sp].to.id));
                         rollbackOperation(stackOp[sp]);
                         total += 2;
                     }
 
                     if (stackNode[sp] != null) {
-                        System.err.println("unmark node " + stackNode[sp].id);
+                        // System.err.println(String.format("%d - unmark node [%d]", stackId[sp], stackNode[sp].id));
                         activeNodes[stackNode[sp].id] = false;
                     }
 
@@ -294,9 +314,10 @@ class Player {
 
                 final Link choice = choices[stackStartPos[sp]++];
                 if (!commitOperation(choice)) {
+                    // System.err.println(String.format("Drop route [%d] -> [%d]", choice.from.id, choice.to.id));
                     continue; // <==
                 }
-                System.err.println(String.format("Use route [%d] -> [%d]", choice.from.id, choice.to.id));
+                // System.err.println(String.format("Use route [%d] -> [%d]", choice.from.id, choice.to.id));
 
                 final Node target = choice.to;
                 Node nextNode = null;
@@ -305,7 +326,7 @@ class Player {
                     newStopPos = stackStopPos[sp];
                 }
                 else {
-                    System.err.println("mark node " + target.id);
+                    // System.err.println("mark node " + target.id);
                     nextNode = target;
                     newStopPos = copyChoices(target.choices, stackStopPos[sp]);
                     activeNodes[target.id] = true;
@@ -321,8 +342,8 @@ class Player {
             }
 
             if (total == 0) {
-                System.err.println("Max SP " + maxSp);
-                System.err.println("Elapsed " + (System.nanoTime() - startTime)/1000000.0);
+                // System.err.println("Max SP " + maxSp);
+                // System.err.println("Elapsed " + (System.nanoTime() - startTime)/1000000.0);
                 dumpStack();
                 break; // <==
             }
