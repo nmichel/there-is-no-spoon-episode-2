@@ -20,14 +20,81 @@ class Player {
 
     static class Link {
         public Link(final Node from, final Node to, final int dir) {
+            this.id = nextId++;
             this.from = from;
             this.to = to;
             this.dir = dir;
         }
 
+        public void crossAndMark(final Link operation) {
+            if (cross(operation)) {
+                crosses.add(operation.id);
+            }
+        }
+
+        private boolean cross(final Link operation) {
+            final int dirOther = operation.dir;
+            if (dir == dirOther || dir == getOppositeDirection(dirOther)) {
+                return false; // <== 
+            }
+
+            if (dir == TOP || dir == BOTTOM) {
+                return crossH(operation); // <== 
+            }
+            return crossV(operation);
+        }
+
+        private boolean crossH(final Link other) {
+            if (other.from.y != other.to.y) {
+                return false; // <==  not an horizontal
+            }
+
+            final int refY = other.from.y;
+            final int minY = Math.min(from.y, to.y);
+            final int maxY = Math.max(from.y, to.y);
+            if (refY <= minY || refY >= maxY) {
+                return false; // <==
+            }
+
+            final int refX = from.x;
+            final int minX = Math.min(other.from.x, other.to.x);
+            final int maxX = Math.max(other.from.x, other.to.x);
+            if (refX <= minX || refX >= maxX) {
+                return false; // <==
+            }
+
+            return true; // <== found one edge crossing
+        }
+
+        private boolean crossV(final Link other) {
+            if (other.from.x != other.to.x) {
+                return false; // <==  not an vertical
+            }
+
+            final int refX = other.from.x;
+            final int minX = Math.min(from.x, to.x);
+            final int maxX = Math.max(from.x, to.x);
+            if (refX <= minX || refX >= maxX) {
+                return false; // <==
+            }
+
+            final int refY = from.y;
+            final int minY = Math.min(other.from.y, other.to.y);
+            final int maxY = Math.max(other.from.y, other.to.y);
+            if (refY <= minY || refY >= maxY) {
+                return false; // <==
+            }
+
+            return true; // <== found one edge crossing
+        }
+
+        public final int id;
         public final Node from;
         public final Node to;
         public final int dir;
+        public final ArrayList<Integer> crosses = new ArrayList<>();
+
+        private static int nextId = 0;
     }
 
     static class Node {
@@ -64,15 +131,16 @@ class Player {
         private int iter = 0;
         private static int nextId = 0;
     }
-    
+
     static class Graph {
         public int total = 0;
         public ArrayList<Node> nodes = new ArrayList<>();
-        
+        public ArrayList<Link> links = new ArrayList<>();
+
         public static Graph buildGraphFromInput() {
             final Graph graph = new Graph();
             final Scanner in = new Scanner(System.in);
-            
+
             final int width = in.nextInt(); // the number of cells on the X axis
             System.err.println(String.format("IN %d", width));
             final int height = in.nextInt(); // the number of cells on the Y axis
@@ -107,22 +175,40 @@ class Player {
             }
 
             graph.buildChoices();
-
-            graph.nodes = graph.nodes
-                .stream()
-                .sorted( (a, b) -> b.target - a.target)
-                .collect(Collectors.toCollection(ArrayList::new));
+            graph.sortNodes();
+            graph.buildCrosses();
 
             return graph;
         }
-        
-        public void buildChoices() {
-            nodes.stream().forEach(Node::getChoicesFromNode);
+
+        private void buildCrosses() {
+            for (int i = 0; i < links.size(); ++i) {
+                final Link a = links.get(i);
+                for (int j = i+1; j < links.size(); ++j) {
+                   final Link b = links.get(j);
+                    a.crossAndMark(b);
+                }
+            }
+        }
+
+        private void buildChoices() {
+            nodes.stream().forEach(e -> {
+                e.getChoicesFromNode();
+                links.addAll(e.choices);
+            });
+        }
+
+        private void sortNodes() {
+            nodes = nodes
+                .stream()
+                .sorted((a, b) -> b.target - a.target)
+                .collect(Collectors.toCollection(ArrayList::new));
         }
     }
 
     private final Graph graph;
     private final boolean[] activeNodes;
+    private final boolean[] activeLinks;
     private int ctxtNextId = 0;
     private final Link[] choices = new Link[31*31*4];
 
@@ -138,6 +224,10 @@ class Player {
         activeNodes = new boolean[graph.nodes.size()];
         for (int i = 0; i < activeNodes.length; ++i) {
             activeNodes[i] = false;
+        }
+        activeLinks = new boolean[graph.nodes.size()*4];
+        for (int i = 0; i < activeLinks.length; ++i) {
+            activeLinks[i] = false;
         }
     }
 
@@ -172,63 +262,13 @@ class Player {
         });
     }
 
-    boolean crossH(final Link operation) {
-        for (int i = 1; i <= sp; ++i) {
-            final Link op = stackOp[i];
-            if (op.from.y != op.to.y) {
-                continue; // <==  not an horizontal
-            }
-            final int refY = op.from.y;
-            final int minY = Math.min(operation.from.y, operation.to.y);
-            final int maxY = Math.max(operation.from.y, operation.to.y);
-            if (refY <= minY || refY >= maxY) {
-                continue; // <==
-            }
-
-            final int refX = operation.from.x;
-            final int minX = Math.min(op.from.x, op.to.x);
-            final int maxX = Math.max(op.from.x, op.to.x);
-            if (refX <= minX || refX >= maxX) {
-                continue; // <==
-            }
-
-            return true; // <== found one edge crossing
-        }
-        return false;
-    }
-
-    boolean crossV(final Link operation) {
-        for (int i = 1; i <= sp; ++i) {
-            final Link op = stackOp[i];
-            if (op.from.x != op.to.x) {
-                continue; // <==  not an horizontal
-            }
-
-            final int refX = op.from.x;
-            final int minX = Math.min(operation.from.x, operation.to.x);
-            final int maxX = Math.max(operation.from.x, operation.to.x);
-            if (refX <= minX || refX >= maxX) {
-                continue; // <==
-            }
-
-            final int refY = operation.from.y;
-            final int minY = Math.min(op.from.y, op.to.y);
-            final int maxY = Math.max(op.from.y, op.to.y);
-            if (refY <= minY || refY >= maxY) {
-                continue; // <==
-            }
-
-            return true; // <== found one edge crossing
-        }
-        return false;
-    }
-
     boolean cross(final Link operation) {
-        final int dir = operation.dir;
-        if (dir == TOP || dir == BOTTOM) {
-            return crossH(operation);
+        for (int i = 0; i < operation.crosses.size(); ++i) {
+            if (activeLinks[operation.crosses.get(i)]) {
+                return true;
+            }
         }
-        return crossV(operation);
+        return false;
     }
 
     boolean commitOperation(final Link link) {
@@ -236,10 +276,11 @@ class Player {
             return false; // <== source and/or target node are "full"
         }
 
-        if (cross(link)) {
+        if (link.crosses.size() > 0 && cross(link)) {
             return false; // <== operation would cross a edge
         }
 
+        activeLinks[link.id] = true;
         ++link.from.current;
         ++link.to.current;
 
@@ -249,6 +290,7 @@ class Player {
     void rollbackOperation(final Link link) {
         --link.from.current;
         --link.to.current;
+        activeLinks[link.id] = false;
     }
 
     private int copyChoices(final ArrayList<Link> from, final int pos) {
@@ -353,8 +395,18 @@ class Player {
     }
 
     public static void main(String args[]) {
+        final long graphStartTime = System.nanoTime();
         final Graph graph = Graph.buildGraphFromInput();
+        System.err.println(String.format("Build graph in : %f ms", (System.nanoTime()-graphStartTime)/1000000.0));
+
+        for (int i = 0; i < graph.links.size(); ++i) {
+            final Link l = graph.links.get(i);
+            System.err.println(String.format("Link [%d] has %d crosses", l.id, l.crosses.size()));
+        }
+
+        final long solveStartTime = System.nanoTime();
         final Player player = new Player(graph);
         player.play();
+        System.err.println(String.format("Solved in in : %f ms", (System.nanoTime()-solveStartTime)/1000000.0));
     }
 }
