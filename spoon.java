@@ -1,4 +1,6 @@
 import java.util.*;
+import java.util.Map.Entry;
+import java.util.function.*;
 import java.util.stream.*;
 import java.io.*;
 import java.math.*;
@@ -28,7 +30,13 @@ class Player {
 
         public void crossAndMark(final Link operation) {
             if (cross(operation)) {
-                crosses.add(operation.id);
+                System.err.println(String.format("Detected cross [%d] X [%d]", id, operation.id));
+                if (! crosses.contains(operation.id)) {
+                    crosses.add(operation.id);
+                }
+                if (! operation.crosses.contains(id)) {
+                    operation.crosses.add(id);
+                }
             }
         }
 
@@ -111,13 +119,38 @@ class Player {
         }
 
         public void getChoicesFromNode() {
-            iter = 0;
+            iter = -1;
             choices = 
                 Stream.of(links)
-                    .filter(n -> n != null)
-                    .map(n -> new Link(this, n, iter++))
+                    .filter(n -> {
+                        ++iter;
+                        return n != null;
+                    })
+                    .map(n -> new Link(this, n, iter))
                     .sorted( (a, b) -> b.to.target - a.to.target)
                     .collect(Collectors.toCollection(ArrayList::new));
+        }
+
+        public Link removeChoice(final Node to) {
+            for (int i = 0; i < choices.size(); ++i) {
+                if (choices.get(i).to == to) {
+                    return choices.remove(i); // <== 
+                }
+            }
+            return null;
+        }
+
+        public Link removeChoice(final Link link) {
+            for (int i = 0; i < choices.size(); ++i) {
+                if (choices.get(i) == link) {
+                    return choices.remove(i); // <== 
+                }
+            }
+            return null;
+        }
+
+        public void removeAllChoices() {
+            choices.clear();
         }
 
         public final int id;
@@ -134,8 +167,11 @@ class Player {
 
     static class Graph {
         public int total = 0;
-        public ArrayList<Node> nodes = new ArrayList<>();
-        public ArrayList<Link> links = new ArrayList<>();
+        public List<Node> nodes = new ArrayList<>();
+        public Map<Integer, Link> links = new HashMap<>();
+        public ArrayList<Link> obvious = new ArrayList<>();
+        public int width = 0;
+        public int height = 0;
 
         public static Graph buildGraphFromInput() {
             final Graph graph = new Graph();
@@ -149,6 +185,9 @@ class Player {
             if (in.hasNextLine()) {
                 in.nextLine();
             }
+            graph.width = width;
+            graph.height = height;
+
             for (int i = 0; i < height; i++) {
                 Node markerH = null;
                 String line = in.nextLine(); // width characters, each either a number or a '.'
@@ -174,28 +213,195 @@ class Player {
                 }
             }
 
+            System.err.println(String.format("Initial total %d", graph.total));
+            System.err.println(String.format("Initial node count %d", graph.nodes.size()));
             graph.buildChoices();
-            graph.sortNodes();
+            System.err.println(String.format("Initial links count %d", graph.links.size()));
             graph.buildCrosses();
 
+            graph.dump();
+            
+            for (;;) {
+                final ArrayList<Link> res = graph.findObviousCases();
+                if (res.size() == 0) {
+                    break; // <== 
+                }
+                graph.cleanFullNodes();
+                graph.removeIsolatedNodes();
+            }
+            graph.sortNodes();
+
+            System.err.println(String.format("Optimized total %d", graph.total));
+            System.err.println(String.format("Optimized node count %d", graph.nodes.size()));
             return graph;
+        }
+
+        public void dump() {
+            System.err.println("* Nodes");
+            nodes.forEach(n -> {
+                n.choices.stream().forEach(l -> {
+                    StringBuilder crosses = new StringBuilder();
+                    for (int i : l.crosses) {
+                        crosses.append(i);
+                        crosses.append(", ");
+                    }
+                    System.err.println(String.format("Node [%d] | Link [%d] -> Node [%d] | %s", n.id, l.id, l.to.id, crosses.toString()));
+                });
+            });
+
+            System.err.println("* Links");
+            links.forEach((k, l) -> {
+                StringBuilder crosses = new StringBuilder();
+                for (int i : l.crosses) {
+                    crosses.append(i);
+                    crosses.append(", ");
+                }
+                System.err.println(String.format("Link [%d] | From [%d] -> to [%d] | %s", l.id, l.from.id, l.to.id, crosses.toString()));
+            });
         }
 
         private void buildCrosses() {
             for (int i = 0; i < links.size(); ++i) {
                 final Link a = links.get(i);
-                for (int j = i+1; j < links.size(); ++j) {
+                for (int j = 0; j < links.size(); ++j) {
+                    if (i == j) {
+                        continue; // <== 
+                    }
                    final Link b = links.get(j);
-                    a.crossAndMark(b);
+                   a.crossAndMark(b);
                 }
             }
         }
 
         private void buildChoices() {
-            nodes.stream().forEach(e -> {
+            nodes.forEach(e -> {
                 e.getChoicesFromNode();
-                links.addAll(e.choices);
+                e.choices.stream().forEach(l -> {
+                    links.put(l.id, l);
+                });
             });
+        }
+        
+        private ArrayList<Link> tryIsolatedOneNode(final Node e) {
+            ArrayList<Link> res = new ArrayList<>();
+
+            final int delta = (e.target - e.current);
+            if (delta == 1 && e.choices.size() == 1) {
+                total -= 2;
+                System.err.println(String.format("Found isolated one node [%d] with value [%d]", e.id, delta));
+                final Link linkOut = e.choices.get(0);
+                e.choices.clear();
+                System.err.println(String.format("-> Isolated one node | [%d] remove link [%d]", e.id, linkOut.id));
+                res.add(linkOut);
+                linkOut.from.current++;
+                linkOut.to.current++;
+
+                final Link ol = linkOut.to.removeChoice(e);
+                System.err.println(String.format("<- Isolated one node | [%d] remove link [%d]", linkOut.to.id, ol.id));
+            }            
+
+            res.stream().forEach(l -> {
+                l.crosses.forEach(lid -> {
+                    final Link cross = links.get(lid);
+                    final Node node = cross.from;
+                    for (int i = 0; i < node.choices.size(); ++i) {
+                        final Link link = node.choices.get(i);
+                        if (link == cross) {
+                            System.err.println(String.format("Link [%d] crosses [%d] ([%d] -> [%d])", l.id, lid, cross.from.id, cross.to.id));
+                            node.removeChoice(link);
+                            break; // <== 
+                        }
+                    }
+                });
+            });
+
+            return res;
+        }
+        
+        private ArrayList<Link> tryFullNodeCase(final Node e) {
+            ArrayList<Link> res = new ArrayList<>();
+
+            final int delta = (e.target - e.current);
+            if (delta > 0 && delta == e.choices.size()*2) {
+                System.err.println(String.format("Full node [%d] with value [%d]", e.id, delta));
+                total -= delta*2;
+                e.choices.stream().forEach(l -> {
+                    System.err.println(String.format("-> Full node | [%d] remove link [%d]", e.id, l.id));
+                    res.add(l);
+                    l.from.current++;
+                    l.to.current++;
+
+                    final Link ol = l.to.removeChoice(e);
+                    System.err.println(String.format("<- Full node | [%d] remove link [%d]", l.to.id, ol.id));
+                    res.add(ol);
+                    ol.from.current++;
+                    ol.to.current++;
+                });
+                e.removeAllChoices();
+            }
+
+            res.stream().forEach(l -> {
+                l.crosses.forEach(lid -> {
+                    final Link cross = links.get(lid);
+                    final Node node = cross.from;
+                    for (int i = 0; i < node.choices.size(); ++i) {
+                        final Link link = node.choices.get(i);
+                        if (link == cross) {
+                            System.err.println(String.format("Link [%d] crosses [%d] ([%d] -> [%d])", l.id, lid, cross.from.id, cross.to.id));
+                            node.removeChoice(link);
+                            break; // <== 
+                        }
+                    }
+                });
+            });
+
+            return res;
+        }
+        private ArrayList<Link> findObviousCases() {
+            List<Function<Node, ArrayList<Link>>> heuristics = Arrays.asList(this::tryFullNodeCase, this::tryIsolatedOneNode);
+            ArrayList<Link> res = new ArrayList<>();
+
+            for (int i = 0; i < nodes.size(); ++i) {
+                final Node e = nodes.get(i);
+                for (Function<Node, ArrayList<Link>> f : heuristics) {
+                    ArrayList<Link> links = f.apply(e);
+                    if (links.size() > 0) {
+                        res.addAll(links);
+                        break; // <== 
+                    }
+                }
+            }
+
+            obvious.addAll(res);
+            return res;
+        }
+
+        void cleanFullNodes() {
+            nodes
+                .stream()
+                .filter(n -> (n.target - n.current) == 0 && n.choices.size() > 0)
+                .forEach(n -> {
+                    System.err.println(String.format("Clean empty node [%d]", n.id));
+                    n.choices.stream().forEach(l -> {
+                        System.err.println(String.format("-> Clean node [%d] remove link [%d]", n.id, l.id));
+                        final Link ol = l.to.removeChoice(n);
+                        System.err.println(String.format("<- Clean [%d] remove link [%d]", l.to.id, ol.id));
+                    });
+                    n.removeAllChoices();
+                });
+        }
+
+        void removeIsolatedNodes() {
+            nodes = nodes
+                .stream()
+                .filter(n -> {
+                    final boolean r = (n.target - n.current) > 0;
+                    if (! r) {
+                        System.err.println(String.format("Remove node [%d]", n.id));
+                    }
+                    return r;
+                })
+                .collect(Collectors.toCollection(ArrayList::new));
         }
 
         private void sortNodes() {
@@ -221,14 +427,18 @@ class Player {
 
     public Player(final Graph graph) {
         this.graph = graph;
-        activeNodes = new boolean[graph.nodes.size()];
+        activeNodes = new boolean[graph.width * graph.height];
         for (int i = 0; i < activeNodes.length; ++i) {
             activeNodes[i] = false;
         }
-        activeLinks = new boolean[graph.nodes.size()*4];
+        activeLinks = new boolean[graph.width * graph.height * 4];
         for (int i = 0; i < activeLinks.length; ++i) {
             activeLinks[i] = false;
         }
+
+        // graph.obvious.stream().forEach(l -> {
+        //     activeLinks[l.id] = true;
+        // });
     }
 
     private boolean isNodeInStack(final Node node) {
@@ -237,6 +447,22 @@ class Player {
 
     private void dumpStack() {
         final HashMap<Integer, Integer> res = new HashMap<>();
+        System.err.println(String.format("Obvious %d", graph.obvious.size()));
+        for (int i = 0; i < graph.obvious.size(); ++i) {
+            final Link link = graph.obvious.get(i);
+            final int minX = Math.min(link.from.x, link.to.x);
+            final int maxX = Math.max(link.from.x, link.to.x);
+            final int minY = Math.min(link.from.y, link.to.y);
+            final int maxY = Math.max(link.from.y, link.to.y);
+            final int k = (minY * 40 + minX) * 10000 + (maxY * 40 + maxX);
+            if (res.get(k) != null) {
+                res.replace(k, 2);
+            }
+            else {
+                res.put(k, 1);
+            }
+        }
+
         for (int i = 1; i <= sp; ++i) {
             final Link link = stackOp[i];
             final int minX = Math.min(link.from.x, link.to.x);
@@ -324,6 +550,9 @@ class Player {
         int total = graph.total;
         int maxSp = 0;
 
+        if (total == 0) {
+            dumpStack();
+        }
         final long startTime = System.nanoTime();
         for (int i = 0; i < graph.nodes.size(); ++i) {
             final Node root = graph.nodes.get(i);
@@ -390,7 +619,6 @@ class Player {
                 break; // <==
             }
             activeNodes[root.id] = false;
-            --sp;
         }
     }
 
@@ -398,11 +626,6 @@ class Player {
         final long graphStartTime = System.nanoTime();
         final Graph graph = Graph.buildGraphFromInput();
         System.err.println(String.format("Build graph in : %f ms", (System.nanoTime()-graphStartTime)/1000000.0));
-
-        for (int i = 0; i < graph.links.size(); ++i) {
-            final Link l = graph.links.get(i);
-            System.err.println(String.format("Link [%d] has %d crosses", l.id, l.crosses.size()));
-        }
 
         final long solveStartTime = System.nanoTime();
         final Player player = new Player(graph);
