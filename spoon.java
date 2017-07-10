@@ -30,7 +30,7 @@ class Player {
 
         public void crossAndMark(final Link operation) {
             if (cross(operation)) {
-                System.err.println(String.format("Detected cross [%d] X [%d]", id, operation.id));
+                // System.err.println(String.format("Detected cross [%d] X [%d]", id, operation.id));
                 if (! crosses.contains(operation.id)) {
                     crosses.add(operation.id);
                 }
@@ -219,24 +219,31 @@ class Player {
             System.err.println(String.format("Initial links count %d", graph.links.size()));
             graph.buildCrosses();
 
-            graph.dump();
+            // graph.dumpNodes();
+            // graph.dumpLinks();
+            // graph.dumpGraph();
             
             for (;;) {
-                final ArrayList<Link> res = graph.findObviousCases();
-                if (res.size() == 0) {
+                if (! graph.findObviousCases()) {
                     break; // <== 
                 }
                 graph.cleanFullNodes();
                 graph.removeIsolatedNodes();
+                // graph.dumpGraph();
             }
             graph.sortNodes();
 
             System.err.println(String.format("Optimized total %d", graph.total));
             System.err.println(String.format("Optimized node count %d", graph.nodes.size()));
+
+            // graph.dumpNodes();
+            // graph.dumpLinks();
+            // graph.dumpGraph();
+
             return graph;
         }
 
-        public void dump() {
+        public void dumpNodes() {
             System.err.println("* Nodes");
             nodes.forEach(n -> {
                 n.choices.stream().forEach(l -> {
@@ -248,7 +255,8 @@ class Player {
                     System.err.println(String.format("Node [%d] | Link [%d] -> Node [%d] | %s", n.id, l.id, l.to.id, crosses.toString()));
                 });
             });
-
+        }
+        public void dumpLinks() {
             System.err.println("* Links");
             links.forEach((k, l) -> {
                 StringBuilder crosses = new StringBuilder();
@@ -260,6 +268,26 @@ class Player {
             });
         }
 
+        public void dumpGraph() {
+            final char[][] matrix = new char[width][height];
+            for (int i = 0; i < height; ++i) {
+                for (int j = 0; j < width; ++j) {
+                    matrix[j][i] = '.';
+                }
+            }
+
+            for (Node n : nodes) {
+                matrix[n.x][n.y] = Character.forDigit(n.target - n.current, 10);
+            }
+
+            for (int i = 0; i < height; ++i) {
+                StringBuilder sb = new StringBuilder();
+                for (int j = 0; j < width; ++j) {
+                    sb.append(matrix[j][i]);
+                }
+                System.err.println(sb.toString());
+            }
+        }
         private void buildCrosses() {
             for (int i = 0; i < links.size(); ++i) {
                 final Link a = links.get(i);
@@ -281,61 +309,99 @@ class Player {
                 });
             });
         }
-        
-        private ArrayList<Link> tryIsolatedOneNode(final Node e) {
-            ArrayList<Link> res = new ArrayList<>();
 
+        private boolean tryThreeToOneNode(final Node e, ArrayList<Link> out) {
+            final ArrayList<Link> res = new ArrayList<>();
             final int delta = (e.target - e.current);
-            if (delta == 1 && e.choices.size() == 1) {
-                total -= 2;
-                System.err.println(String.format("Found isolated one node [%d] with value [%d]", e.id, delta));
-                final Link linkOut = e.choices.get(0);
-                e.choices.clear();
-                System.err.println(String.format("-> Isolated one node | [%d] remove link [%d]", e.id, linkOut.id));
-                res.add(linkOut);
-                linkOut.from.current++;
-                linkOut.to.current++;
+            if (delta == 3 && e.choices.size() == 2) {
+                Link match = e.choices.get(0);
+                if ((match.to.target - match.to.current) != 1) {
+                    match = e.choices.get(1);
+                    if ((match.to.target - match.to.current) != 1) {
+                        match = null;
+                    }
+                }
+                if (match == null) {
+                    return false; // <== 
+                }
 
-                final Link ol = linkOut.to.removeChoice(e);
-                System.err.println(String.format("<- Isolated one node | [%d] remove link [%d]", linkOut.to.id, ol.id));
+                total -= 2;
+
+                // System.err.println(String.format("Found three to one node [%d] with value [%d]", e.id, delta));
+                // System.err.println(String.format("-> three to one node | [%d] remove link [%d]", e.id, match.id));
+                res.add(match);
+                match.from.current++;
+                match.to.current++;
             }            
 
             res.stream().forEach(l -> {
                 l.crosses.forEach(lid -> {
                     final Link cross = links.get(lid);
                     final Node node = cross.from;
-                    for (int i = 0; i < node.choices.size(); ++i) {
-                        final Link link = node.choices.get(i);
-                        if (link == cross) {
-                            System.err.println(String.format("Link [%d] crosses [%d] ([%d] -> [%d])", l.id, lid, cross.from.id, cross.to.id));
-                            node.removeChoice(link);
-                            break; // <== 
-                        }
+                    if (node.removeChoice(cross) != null){
+                        // System.err.println(String.format("Link [%d] crosses [%d] ([%d] -> [%d])", l.id, lid, cross.from.id, cross.to.id));
                     }
                 });
             });
 
-            return res;
-        }
-        
-        private ArrayList<Link> tryFullNodeCase(final Node e) {
-            ArrayList<Link> res = new ArrayList<>();
+            out.addAll(res);
 
+            return res.size() > 0;
+        }
+
+        private boolean tryIsolatedOneNode(final Node e, ArrayList<Link> out) {
+            final ArrayList<Link> res = new ArrayList<>();
+            final int delta = (e.target - e.current);
+            if (delta == 1 && e.choices.size() == 1) {
+                total -= 2;
+                // System.err.println(String.format("Found isolated one node [%d] with value [%d]", e.id, delta));
+                final Link linkOut = e.choices.get(0);
+                e.choices.clear();
+                // System.err.println(String.format("-> Isolated one node | [%d] remove link [%d]", e.id, linkOut.id));
+                res.add(linkOut);
+                linkOut.from.current++;
+                linkOut.to.current++;
+
+                final Link ol = linkOut.to.removeChoice(e);
+                if (null != ol) {
+                    // System.err.println(String.format("<- Isolated one node | [%d] remove link [%d]", linkOut.to.id, ol.id));
+                }
+            }            
+
+            res.stream().forEach(l -> {
+                l.crosses.forEach(lid -> {
+                    final Link cross = links.get(lid);
+                    final Node node = cross.from;
+                    if (node.removeChoice(cross) != null){
+                        // System.err.println(String.format("Link [%d] crosses [%d] ([%d] -> [%d])", l.id, lid, cross.from.id, cross.to.id));
+                    }
+                });
+            });
+
+            out.addAll(res);
+
+            return res.size() > 0;
+        }
+
+        private boolean tryFullNodeCase(final Node e, final ArrayList<Link> out) {
+            final ArrayList<Link> res = new ArrayList<>();
             final int delta = (e.target - e.current);
             if (delta > 0 && delta == e.choices.size()*2) {
-                System.err.println(String.format("Full node [%d] with value [%d]", e.id, delta));
+                // System.err.println(String.format("Full node [%d] with value [%d]", e.id, delta));
                 total -= delta*2;
                 e.choices.stream().forEach(l -> {
-                    System.err.println(String.format("-> Full node | [%d] remove link [%d]", e.id, l.id));
+                    // System.err.println(String.format("-> Full node | [%d] remove link [%d]", e.id, l.id));
                     res.add(l);
                     l.from.current++;
                     l.to.current++;
 
                     final Link ol = l.to.removeChoice(e);
-                    System.err.println(String.format("<- Full node | [%d] remove link [%d]", l.to.id, ol.id));
-                    res.add(ol);
-                    ol.from.current++;
-                    ol.to.current++;
+                    if (null != ol) {
+                        // System.err.println(String.format("<- Full node | [%d] remove link [%d]", l.to.id, ol.id));
+                        res.add(ol);
+                        ol.from.current++;
+                        ol.to.current++;
+                    }
                 });
                 e.removeAllChoices();
             }
@@ -344,36 +410,67 @@ class Player {
                 l.crosses.forEach(lid -> {
                     final Link cross = links.get(lid);
                     final Node node = cross.from;
-                    for (int i = 0; i < node.choices.size(); ++i) {
-                        final Link link = node.choices.get(i);
-                        if (link == cross) {
-                            System.err.println(String.format("Link [%d] crosses [%d] ([%d] -> [%d])", l.id, lid, cross.from.id, cross.to.id));
-                            node.removeChoice(link);
-                            break; // <== 
-                        }
+                    if (node.removeChoice(cross) != null) {
+                        // System.err.println(String.format("Link [%d] crosses [%d] ([%d] -> [%d])", l.id, lid, cross.from.id, cross.to.id));
+                    }
+                    else {
+                        // System.err.println(String.format("Link [%d] crosses [%d] ([%d] -> [%d]) [Already dropped]", l.id, lid, cross.from.id, cross.to.id));
                     }
                 });
             });
 
-            return res;
-        }
-        private ArrayList<Link> findObviousCases() {
-            List<Function<Node, ArrayList<Link>>> heuristics = Arrays.asList(this::tryFullNodeCase, this::tryIsolatedOneNode);
-            ArrayList<Link> res = new ArrayList<>();
+            out.addAll(res);
 
+            return res.size() > 0;
+        }
+
+        boolean action = false;
+
+        private boolean tryQuiteFullNodeCase(final Node e, final ArrayList<Link> out) {
+            final ArrayList<Link> res = new ArrayList<>();
+            action = false;
+
+            final int delta = (e.target - e.current);
+            if (delta > 0 && delta == e.choices.size()*2-1) {
+                // System.err.println(String.format("Quite full node [%d] with value [%d] and [%d] links", e.id, delta, e.choices.size()));
+                e.choices.stream().forEach(l -> {
+                    res.add(l);
+                });
+            }
+
+            res.stream().forEach(l -> {
+                l.crosses.forEach(lid -> {
+                    final Link cross = links.get(lid);
+                    final Node node = cross.from;
+                    if (node.removeChoice(cross) != null) {
+                        // System.err.println(String.format("Link [%d] crosses [%d] ([%d] -> [%d])", l.id, lid, cross.from.id, cross.to.id));
+                        action = true;
+                    }
+                });
+            });
+
+            return action;
+        }
+
+        private boolean findObviousCases() {
+            List<BiFunction<Node, ArrayList<Link>, Boolean>> heuristics = Arrays.asList(this::tryFullNodeCase, this::tryIsolatedOneNode, this::tryThreeToOneNode, this::tryQuiteFullNodeCase);
+            // List<BiFunction<Node, ArrayList<Link>, Boolean>> heuristics = Arrays.asList(this::tryFullNodeCase, this::tryIsolatedOneNode);
+            ArrayList<Link> res = new ArrayList<>();
+            boolean finalDone = false;
             for (int i = 0; i < nodes.size(); ++i) {
+                boolean done = false;
                 final Node e = nodes.get(i);
-                for (Function<Node, ArrayList<Link>> f : heuristics) {
-                    ArrayList<Link> links = f.apply(e);
-                    if (links.size() > 0) {
-                        res.addAll(links);
+                for (BiFunction<Node, ArrayList<Link>, Boolean> f : heuristics) {
+                    done |= f.apply(e, res);
+                    if (done) {
+                        // dumpGraph();
+                        finalDone = true;
                         break; // <== 
                     }
                 }
             }
-
             obvious.addAll(res);
-            return res;
+            return finalDone;
         }
 
         void cleanFullNodes() {
@@ -381,11 +478,13 @@ class Player {
                 .stream()
                 .filter(n -> (n.target - n.current) == 0 && n.choices.size() > 0)
                 .forEach(n -> {
-                    System.err.println(String.format("Clean empty node [%d]", n.id));
+                    // System.err.println(String.format("Clean empty node [%d]", n.id));
                     n.choices.stream().forEach(l -> {
-                        System.err.println(String.format("-> Clean node [%d] remove link [%d]", n.id, l.id));
+                        // System.err.println(String.format("-> Clean node [%d] remove link [%d]", n.id, l.id));
                         final Link ol = l.to.removeChoice(n);
-                        System.err.println(String.format("<- Clean [%d] remove link [%d]", l.to.id, ol.id));
+                        if (null != ol) {
+                            // System.err.println(String.format("<- Clean [%d] remove link [%d]", l.to.id, ol.id));
+                        }
                     });
                     n.removeAllChoices();
                 });
@@ -397,7 +496,7 @@ class Player {
                 .filter(n -> {
                     final boolean r = (n.target - n.current) > 0;
                     if (! r) {
-                        System.err.println(String.format("Remove node [%d]", n.id));
+                        // System.err.println(String.format("Remove node [%d]", n.id));
                     }
                     return r;
                 })
@@ -436,9 +535,9 @@ class Player {
             activeLinks[i] = false;
         }
 
-        // graph.obvious.stream().forEach(l -> {
-        //     activeLinks[l.id] = true;
-        // });
+        graph.obvious.stream().forEach(l -> {
+            activeLinks[l.id] = true;
+        });
     }
 
     private boolean isNodeInStack(final Node node) {
@@ -447,7 +546,7 @@ class Player {
 
     private void dumpStack() {
         final HashMap<Integer, Integer> res = new HashMap<>();
-        System.err.println(String.format("Obvious %d", graph.obvious.size()));
+        // System.err.println(String.format("Obvious %d", graph.obvious.size()));
         for (int i = 0; i < graph.obvious.size(); ++i) {
             final Link link = graph.obvious.get(i);
             final int minX = Math.min(link.from.x, link.to.x);
@@ -462,7 +561,7 @@ class Player {
                 res.put(k, 1);
             }
         }
-
+        
         for (int i = 1; i <= sp; ++i) {
             final Link link = stackOp[i];
             final int minX = Math.min(link.from.x, link.to.x);
