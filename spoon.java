@@ -30,13 +30,8 @@ class Player {
 
         public void crossAndMark(final Link operation) {
             if (cross(operation)) {
-                // System.err.println(String.format("Detected cross [%d] X [%d]", id, operation.id));
-                if (! crosses.contains(operation.id)) {
-                    crosses.add(operation.id);
-                }
-                if (! operation.crosses.contains(id)) {
-                    operation.crosses.add(id);
-                }
+                crosses.add(operation.id);
+                operation.crosses.add(id);
             }
         }
 
@@ -113,59 +108,48 @@ class Player {
             this.target = v;
         }
 
-        public void link(final int direction, final Node other) {
-            links[direction] = other;
-            other.links[getOppositeDirection(direction)] = this;
+        public static void link(final Node from, final Node to, final int direction) {
+            from.link(to, direction);
+            to.link(from, getOppositeDirection(direction));
         }
 
-        public void getChoicesFromNode() {
-            iter = -1;
-            choices = 
-                Stream.of(links)
-                    .filter(n -> {
-                        ++iter;
-                        return n != null;
-                    })
-                    .map(n -> new Link(this, n, iter))
-                    .sorted( (a, b) -> b.to.target - a.to.target)
-                    .collect(Collectors.toCollection(ArrayList::new));
+        public void link(final Node to, final int direction) {
+            links.add(new Link(this, to, direction));
         }
 
-        public Link removeChoice(final Node to) {
-            for (int i = 0; i < choices.size(); ++i) {
-                if (choices.get(i).to == to) {
-                    return choices.remove(i); // <== 
+        public Link removeLink(final Node to) {
+            for (int i = 0; i < links.size(); ++i) {
+                if (links.get(i).to == to) {
+                    return links.remove(i); // <== 
                 }
             }
             return null;
         }
 
-        public Link removeChoice(final Link link) {
-            for (int i = 0; i < choices.size(); ++i) {
-                if (choices.get(i) == link) {
-                    return choices.remove(i); // <== 
+        public Link removeLink(final Link link) {
+            for (int i = 0; i < links.size(); ++i) {
+                if (links.get(i) == link) {
+                    return links.remove(i); // <== 
                 }
             }
             return null;
         }
 
-        public void removeAllChoices() {
-            choices.clear();
+        public void removeAlllinks() {
+            links.clear();
         }
 
         public final int id;
         public final int x;
         public final int y;
         public final int target;
-        public final Node[] links = new Node[] {null, null, null, null};
         public int current = 0;
-        public ArrayList<Link> choices;
+        final public ArrayList<Link> links = new ArrayList<>();
 
-        private int iter = 0;
         private static int nextId = 0;
     }
 
-    static class Graph {
+    static class Hashiwokakero {
         public int total = 0;
         public List<Node> nodes = new ArrayList<>();
         public Map<Integer, Link> links = new HashMap<>();
@@ -173,14 +157,14 @@ class Player {
         public int width = 0;
         public int height = 0;
 
-        public static Graph buildGraphFromInput() {
-            final Graph graph = new Graph();
+        public static Hashiwokakero buildGraphFromInput() {
+            final Hashiwokakero graph = new Hashiwokakero();
             final Scanner in = new Scanner(System.in);
 
             final int width = in.nextInt(); // the number of cells on the X axis
-            System.err.println(String.format("IN %d", width));
+            System.err.println(String.format("%d", width));
             final int height = in.nextInt(); // the number of cells on the Y axis
-            System.err.println(String.format("IN %d", height));
+            System.err.println(String.format("%d", height));
             final Node[] markersW = new Node[width];
             if (in.hasNextLine()) {
                 in.nextLine();
@@ -191,7 +175,7 @@ class Player {
             for (int i = 0; i < height; i++) {
                 Node markerH = null;
                 String line = in.nextLine(); // width characters, each either a number or a '.'
-                System.err.println(String.format("IN %s", line));
+                System.err.println(String.format("%s", line));
                 for (int j = 0; j < line.length(); ++j) {
                     final char c = line.charAt(j);
 
@@ -203,108 +187,53 @@ class Player {
                     final Node node = new Node(j, i, value);
                     graph.nodes.add(node);
                     if (markerH != null) {
-                        markerH.link(RIGHT, node);
+                        Node.link(markerH, node, RIGHT);
                     }
                     markerH = node;
                     if (markersW[j] != null) {
-                        markersW[j].link(BOTTOM, node);
+                        Node.link(markersW[j], node, BOTTOM);
                     }
                     markersW[j] = node;
                 }
             }
 
-            System.err.println(String.format("Initial total %d", graph.total));
-            System.err.println(String.format("Initial node count %d", graph.nodes.size()));
-            graph.buildChoices();
-            System.err.println(String.format("Initial links count %d", graph.links.size()));
+            graph.collectAllLinks();
             graph.buildCrosses();
-
-            // graph.dumpNodes();
-            // graph.dumpLinks();
-            // graph.dumpGraph();
-            
-            for (;;) {
-                if (! graph.findObviousCases()) {
-                    break; // <== 
-                }
-                graph.cleanFullNodes();
-                graph.removeIsolatedNodes();
-                // graph.dumpGraph();
-            }
-            graph.sortNodes();
-
-            System.err.println(String.format("Optimized total %d", graph.total));
-            System.err.println(String.format("Optimized node count %d", graph.nodes.size()));
-
-            // graph.dumpNodes();
-            // graph.dumpLinks();
-            // graph.dumpGraph();
 
             return graph;
         }
 
-        public void dumpNodes() {
-            System.err.println("* Nodes");
-            nodes.forEach(n -> {
-                n.choices.stream().forEach(l -> {
-                    StringBuilder crosses = new StringBuilder();
-                    for (int i : l.crosses) {
-                        crosses.append(i);
-                        crosses.append(", ");
-                    }
-                    System.err.println(String.format("Node [%d] | Link [%d] -> Node [%d] | %s", n.id, l.id, l.to.id, crosses.toString()));
-                });
-            });
-        }
-        public void dumpLinks() {
-            System.err.println("* Links");
-            links.forEach((k, l) -> {
-                StringBuilder crosses = new StringBuilder();
-                for (int i : l.crosses) {
-                    crosses.append(i);
-                    crosses.append(", ");
+        public void optimize() {
+            System.err.println(String.format("Initial total %d", total));
+            System.err.println(String.format("Initial nodes count %d", nodes.size()));
+            System.err.println(String.format("Initial links count %d", links.size()));
+            
+            for (;;) {
+                if (! findObviousCases()) {
+                    break; // <== 
                 }
-                System.err.println(String.format("Link [%d] | From [%d] -> to [%d] | %s", l.id, l.from.id, l.to.id, crosses.toString()));
-            });
+                cleanFullNodes();
+                removeIsolatedNodes();
+            }
+            sortNodes();
+
+            System.err.println(String.format("Optimized total %d", total));
+            System.err.println(String.format("Optimized nodes count %d", nodes.size()));
         }
 
-        public void dumpGraph() {
-            final char[][] matrix = new char[width][height];
-            for (int i = 0; i < height; ++i) {
-                for (int j = 0; j < width; ++j) {
-                    matrix[j][i] = '.';
-                }
-            }
-
-            for (Node n : nodes) {
-                matrix[n.x][n.y] = Character.forDigit(n.target - n.current, 10);
-            }
-
-            for (int i = 0; i < height; ++i) {
-                StringBuilder sb = new StringBuilder();
-                for (int j = 0; j < width; ++j) {
-                    sb.append(matrix[j][i]);
-                }
-                System.err.println(sb.toString());
-            }
-        }
         private void buildCrosses() {
             for (int i = 0; i < links.size(); ++i) {
                 final Link a = links.get(i);
-                for (int j = 0; j < links.size(); ++j) {
-                    if (i == j) {
-                        continue; // <== 
-                    }
+                for (int j = i+1; j < links.size(); ++j) {
                    final Link b = links.get(j);
                    a.crossAndMark(b);
                 }
             }
         }
 
-        private void buildChoices() {
+        private void collectAllLinks() {
             nodes.forEach(e -> {
-                e.getChoicesFromNode();
-                e.choices.stream().forEach(l -> {
+                e.links.stream().forEach(l -> {
                     links.put(l.id, l);
                 });
             });
@@ -313,10 +242,10 @@ class Player {
         private boolean tryThreeToOneNode(final Node e, ArrayList<Link> out) {
             final ArrayList<Link> res = new ArrayList<>();
             final int delta = (e.target - e.current);
-            if (delta == 3 && e.choices.size() == 2) {
-                Link match = e.choices.get(0);
+            if (delta == 3 && e.links.size() == 2) {
+                Link match = e.links.get(0);
                 if ((match.to.target - match.to.current) != 1) {
-                    match = e.choices.get(1);
+                    match = e.links.get(1);
                     if ((match.to.target - match.to.current) != 1) {
                         match = null;
                     }
@@ -327,8 +256,6 @@ class Player {
 
                 total -= 2;
 
-                // System.err.println(String.format("Found three to one node [%d] with value [%d]", e.id, delta));
-                // System.err.println(String.format("-> three to one node | [%d] remove link [%d]", e.id, match.id));
                 res.add(match);
                 match.from.current++;
                 match.to.current++;
@@ -338,9 +265,7 @@ class Player {
                 l.crosses.forEach(lid -> {
                     final Link cross = links.get(lid);
                     final Node node = cross.from;
-                    if (node.removeChoice(cross) != null){
-                        // System.err.println(String.format("Link [%d] crosses [%d] ([%d] -> [%d])", l.id, lid, cross.from.id, cross.to.id));
-                    }
+                    node.removeLink(cross);
                 });
             });
 
@@ -352,29 +277,22 @@ class Player {
         private boolean tryIsolatedOneNode(final Node e, ArrayList<Link> out) {
             final ArrayList<Link> res = new ArrayList<>();
             final int delta = (e.target - e.current);
-            if (delta == 1 && e.choices.size() == 1) {
+            if (delta == 1 && e.links.size() == 1) {
                 total -= 2;
-                // System.err.println(String.format("Found isolated one node [%d] with value [%d]", e.id, delta));
-                final Link linkOut = e.choices.get(0);
-                e.choices.clear();
-                // System.err.println(String.format("-> Isolated one node | [%d] remove link [%d]", e.id, linkOut.id));
+                final Link linkOut = e.links.get(0);
+                e.links.clear();
                 res.add(linkOut);
                 linkOut.from.current++;
                 linkOut.to.current++;
 
-                final Link ol = linkOut.to.removeChoice(e);
-                if (null != ol) {
-                    // System.err.println(String.format("<- Isolated one node | [%d] remove link [%d]", linkOut.to.id, ol.id));
-                }
+                final Link ol = linkOut.to.removeLink(e);
             }            
 
             res.stream().forEach(l -> {
                 l.crosses.forEach(lid -> {
                     final Link cross = links.get(lid);
                     final Node node = cross.from;
-                    if (node.removeChoice(cross) != null){
-                        // System.err.println(String.format("Link [%d] crosses [%d] ([%d] -> [%d])", l.id, lid, cross.from.id, cross.to.id));
-                    }
+                    node.removeLink(cross);
                 });
             });
 
@@ -386,36 +304,28 @@ class Player {
         private boolean tryFullNodeCase(final Node e, final ArrayList<Link> out) {
             final ArrayList<Link> res = new ArrayList<>();
             final int delta = (e.target - e.current);
-            if (delta > 0 && delta == e.choices.size()*2) {
-                // System.err.println(String.format("Full node [%d] with value [%d]", e.id, delta));
+            if (delta > 0 && delta == e.links.size()*2) {
                 total -= delta*2;
-                e.choices.stream().forEach(l -> {
-                    // System.err.println(String.format("-> Full node | [%d] remove link [%d]", e.id, l.id));
+                e.links.stream().forEach(l -> {
                     res.add(l);
                     l.from.current++;
                     l.to.current++;
 
-                    final Link ol = l.to.removeChoice(e);
+                    final Link ol = l.to.removeLink(e);
                     if (null != ol) {
-                        // System.err.println(String.format("<- Full node | [%d] remove link [%d]", l.to.id, ol.id));
                         res.add(ol);
                         ol.from.current++;
                         ol.to.current++;
                     }
                 });
-                e.removeAllChoices();
+                e.removeAlllinks();
             }
 
             res.stream().forEach(l -> {
                 l.crosses.forEach(lid -> {
                     final Link cross = links.get(lid);
                     final Node node = cross.from;
-                    if (node.removeChoice(cross) != null) {
-                        // System.err.println(String.format("Link [%d] crosses [%d] ([%d] -> [%d])", l.id, lid, cross.from.id, cross.to.id));
-                    }
-                    else {
-                        // System.err.println(String.format("Link [%d] crosses [%d] ([%d] -> [%d]) [Already dropped]", l.id, lid, cross.from.id, cross.to.id));
-                    }
+                    node.removeLink(cross);
                 });
             });
 
@@ -431,9 +341,8 @@ class Player {
             action = false;
 
             final int delta = (e.target - e.current);
-            if (delta > 0 && delta == e.choices.size()*2-1) {
-                // System.err.println(String.format("Quite full node [%d] with value [%d] and [%d] links", e.id, delta, e.choices.size()));
-                e.choices.stream().forEach(l -> {
+            if (delta > 0 && delta == e.links.size()*2-1) {
+                e.links.stream().forEach(l -> {
                     res.add(l);
                 });
             }
@@ -442,8 +351,7 @@ class Player {
                 l.crosses.forEach(lid -> {
                     final Link cross = links.get(lid);
                     final Node node = cross.from;
-                    if (node.removeChoice(cross) != null) {
-                        // System.err.println(String.format("Link [%d] crosses [%d] ([%d] -> [%d])", l.id, lid, cross.from.id, cross.to.id));
+                    if (node.removeLink(cross) != null) {
                         action = true;
                     }
                 });
@@ -454,7 +362,6 @@ class Player {
 
         private boolean findObviousCases() {
             List<BiFunction<Node, ArrayList<Link>, Boolean>> heuristics = Arrays.asList(this::tryFullNodeCase, this::tryIsolatedOneNode, this::tryThreeToOneNode, this::tryQuiteFullNodeCase);
-            // List<BiFunction<Node, ArrayList<Link>, Boolean>> heuristics = Arrays.asList(this::tryFullNodeCase, this::tryIsolatedOneNode);
             ArrayList<Link> res = new ArrayList<>();
             boolean finalDone = false;
             for (int i = 0; i < nodes.size(); ++i) {
@@ -463,7 +370,6 @@ class Player {
                 for (BiFunction<Node, ArrayList<Link>, Boolean> f : heuristics) {
                     done |= f.apply(e, res);
                     if (done) {
-                        // dumpGraph();
                         finalDone = true;
                         break; // <== 
                     }
@@ -476,30 +382,19 @@ class Player {
         void cleanFullNodes() {
             nodes
                 .stream()
-                .filter(n -> (n.target - n.current) == 0 && n.choices.size() > 0)
+                .filter(n -> (n.target - n.current) == 0 && n.links.size() > 0)
                 .forEach(n -> {
-                    // System.err.println(String.format("Clean empty node [%d]", n.id));
-                    n.choices.stream().forEach(l -> {
-                        // System.err.println(String.format("-> Clean node [%d] remove link [%d]", n.id, l.id));
-                        final Link ol = l.to.removeChoice(n);
-                        if (null != ol) {
-                            // System.err.println(String.format("<- Clean [%d] remove link [%d]", l.to.id, ol.id));
-                        }
+                    n.links.stream().forEach(l -> {
+                        l.to.removeLink(n);
                     });
-                    n.removeAllChoices();
+                    n.removeAlllinks();
                 });
         }
 
         void removeIsolatedNodes() {
             nodes = nodes
                 .stream()
-                .filter(n -> {
-                    final boolean r = (n.target - n.current) > 0;
-                    if (! r) {
-                        // System.err.println(String.format("Remove node [%d]", n.id));
-                    }
-                    return r;
-                })
+                .filter(n -> (n.target - n.current) > 0)
                 .collect(Collectors.toCollection(ArrayList::new));
         }
 
@@ -511,20 +406,20 @@ class Player {
         }
     }
 
-    private final Graph graph;
+    private final Hashiwokakero graph;
     private final boolean[] activeNodes;
     private final boolean[] activeLinks;
     private int ctxtNextId = 0;
-    private final Link[] choices = new Link[31*31*4];
+    private final Link[] links = new Link[31*31*4];
 
-    final int[] stackId = new int[1000];
-    final Link[] stackOp = new Link[1000];
-    final Node[] stackNode = new Node[1000];
-    final int[] stackStartPos = new int[1000];
-    final int[] stackStopPos = new int[1000];
-    int sp = -1;
+    private final int[] stackId = new int[1000];
+    private final Link[] stackOp = new Link[1000];
+    private final Node[] stackNode = new Node[1000];
+    private final int[] stackStartPos = new int[1000];
+    private final int[] stackStopPos = new int[1000];
+    private int sp = -1;
 
-    public Player(final Graph graph) {
+    public Player(final Hashiwokakero graph) {
         this.graph = graph;
         activeNodes = new boolean[graph.width * graph.height];
         for (int i = 0; i < activeNodes.length; ++i) {
@@ -546,7 +441,6 @@ class Player {
 
     private void dumpStack() {
         final HashMap<Integer, Integer> res = new HashMap<>();
-        // System.err.println(String.format("Obvious %d", graph.obvious.size()));
         for (int i = 0; i < graph.obvious.size(); ++i) {
             final Link link = graph.obvious.get(i);
             final int minX = Math.min(link.from.x, link.to.x);
@@ -587,7 +481,7 @@ class Player {
         });
     }
 
-    boolean cross(final Link operation) {
+    boolean willCrossActiveLink(final Link operation) {
         for (int i = 0; i < operation.crosses.size(); ++i) {
             if (activeLinks[operation.crosses.get(i)]) {
                 return true;
@@ -596,12 +490,12 @@ class Player {
         return false;
     }
 
-    boolean commitOperation(final Link link) {
+    boolean tryCommitOperation(final Link link) {
         if (link.from.current == link.from.target || link.to.current == link.to.target) {
             return false; // <== source and/or target node are "full"
         }
 
-        if (link.crosses.size() > 0 && cross(link)) {
+        if (link.crosses.size() > 0 && willCrossActiveLink(link)) {
             return false; // <== operation would cross a edge
         }
 
@@ -618,31 +512,12 @@ class Player {
         activeLinks[link.id] = false;
     }
 
-    private int copyChoices(final ArrayList<Link> from, final int pos) {
+    private int copylinks(final ArrayList<Link> from, final int pos) {
         int i = 0;
         for (; i < from.size(); ++i) {
-            choices[pos+i] = from.get(i);
-            // System.err.println(String.format("Add route [%d] -> [%d]", choices[pos+i].from.id, choices[pos+i].to.id));
+            links[pos+i] = from.get(i);
         }
         return pos+i;
-    }
-
-    private String dumpChoices() {
-        StringBuilder res = new StringBuilder();
-        res.append("Choices [");
-        for (int i  = 0; i < stackStopPos[sp]; ++i) {
-            if (i == stackStartPos[sp])  {
-                res.append("*");
-            }
-            res
-                .append("(")
-                .append(choices[i].from.id)
-                .append(" -> ")
-                .append(choices[i].to.id)
-                .append(")");
-        }
-        res.append("]");
-        return res.toString();
     }
 
     public void play()  {
@@ -652,11 +527,9 @@ class Player {
         if (total == 0) {
             dumpStack();
         }
-        final long startTime = System.nanoTime();
         for (int i = 0; i < graph.nodes.size(); ++i) {
             final Node root = graph.nodes.get(i);
-            // System.err.println("root node " + root.id);
-            final int stopPos = copyChoices(root.choices, 0);
+            final int stopPos = copylinks(root.links, 0);
             activeNodes[root.id] = true;
             ++sp;
             stackId[sp] = ctxtNextId++;
@@ -665,16 +538,13 @@ class Player {
             stackStartPos[sp] = 0;
             stackStopPos[sp] = stopPos;
             while(total > 0 && sp >= 0) {
-                // System.err.println(String.format("%d - %d - Loop - Node [%d] Range [%d -> %d] %s", stackId[sp], sp, stackNode[sp] != null ? stackNode[sp].id : -1, stackStartPos[sp], stackStopPos[sp], dumpChoices()));
                 if (stackStartPos[sp] == stackStopPos[sp]) {
                     if (stackOp[sp] != null) {
-                        // System.err.println(String.format("%d - Node [%d] Rollback [%d -> %d]", stackId[sp], stackNode[sp] != null ? stackNode[sp].id : -1, stackOp[sp].from.id, stackOp[sp].to.id));
                         rollbackOperation(stackOp[sp]);
                         total += 2;
                     }
 
                     if (stackNode[sp] != null) {
-                        // System.err.println(String.format("%d - unmark node [%d]", stackId[sp], stackNode[sp].id));
                         activeNodes[stackNode[sp].id] = false;
                     }
 
@@ -682,12 +552,10 @@ class Player {
                     continue; // <==
                 }
 
-                final Link choice = choices[stackStartPos[sp]++];
-                if (!commitOperation(choice)) {
-                    // System.err.println(String.format("Drop route [%d] -> [%d]", choice.from.id, choice.to.id));
+                final Link choice = links[stackStartPos[sp]++];
+                if (!tryCommitOperation(choice)) {
                     continue; // <==
                 }
-                // System.err.println(String.format("Use route [%d] -> [%d]", choice.from.id, choice.to.id));
 
                 final Node target = choice.to;
                 Node nextNode = null;
@@ -696,9 +564,8 @@ class Player {
                     newStopPos = stackStopPos[sp];
                 }
                 else {
-                    // System.err.println("mark node " + target.id);
                     nextNode = target;
-                    newStopPos = copyChoices(target.choices, stackStopPos[sp]);
+                    newStopPos = copylinks(target.links, stackStopPos[sp]);
                     activeNodes[target.id] = true;
                 }
                 total -= 2;
@@ -712,8 +579,6 @@ class Player {
             }
 
             if (total == 0) {
-                // System.err.println("Max SP " + maxSp);
-                // System.err.println("Elapsed " + (System.nanoTime() - startTime)/1000000.0);
                 dumpStack();
                 break; // <==
             }
@@ -723,7 +588,8 @@ class Player {
 
     public static void main(String args[]) {
         final long graphStartTime = System.nanoTime();
-        final Graph graph = Graph.buildGraphFromInput();
+        final Hashiwokakero graph = Hashiwokakero.buildGraphFromInput();
+        graph.optimize();
         System.err.println(String.format("Build graph in : %f ms", (System.nanoTime()-graphStartTime)/1000000.0));
 
         final long solveStartTime = System.nanoTime();
