@@ -417,179 +417,181 @@ class Player {
         }
     }
 
-    private final Hashiwokakero graph;
-    private final boolean[] activeNodes;
-    private final boolean[] activeLinks;
-    private int ctxtNextId = 0;
-    private final Link[] links = new Link[31*31*4];
+    static class Solver {
+        public Solver(final Hashiwokakero hashi) {
+            graph = hashi;
+            activeNodes = new boolean[graph.width * graph.height];
+            activeLinks = new boolean[graph.width * graph.height * 4];
 
-    private final int[] stackId = new int[1000];
-    private final Link[] stackOp = new Link[1000];
-    private final Node[] stackNode = new Node[1000];
-    private final int[] stackStartPos = new int[1000];
-    private final int[] stackStopPos = new int[1000];
-    private int sp = -1;
+            Arrays.fill(activeNodes, false);
+            Arrays.fill(activeLinks, false);
 
-    public Player(final Hashiwokakero hashi) {
-        graph = hashi;
-        activeNodes = new boolean[graph.width * graph.height];
-        activeLinks = new boolean[graph.width * graph.height * 4];
-
-        Arrays.fill(activeNodes, false);
-        Arrays.fill(activeLinks, false);
-
-        graph.obvious.stream().forEach(l -> {
-            activeLinks[l.id] = true;
-        });
-    }
-
-    private boolean isNodeInStack(final Node node) {
-        return activeNodes[node.id];
-    }
-
-    private void dumpStack() {
-        final HashMap<Integer, Integer> res = new HashMap<>();
-        for (int i = 0; i < graph.obvious.size(); ++i) {
-            final Link link = graph.obvious.get(i);
-            final int minX = Math.min(link.from.x, link.to.x);
-            final int maxX = Math.max(link.from.x, link.to.x);
-            final int minY = Math.min(link.from.y, link.to.y);
-            final int maxY = Math.max(link.from.y, link.to.y);
-            final int k = (minY * 40 + minX) * 10000 + (maxY * 40 + maxX);
-            if (res.get(k) != null) {
-                res.replace(k, 2);
-            }
-            else {
-                res.put(k, 1);
-            }
-        }
-        
-        for (int i = 1; i <= sp; ++i) {
-            final Link link = stackOp[i];
-            final int minX = Math.min(link.from.x, link.to.x);
-            final int maxX = Math.max(link.from.x, link.to.x);
-            final int minY = Math.min(link.from.y, link.to.y);
-            final int maxY = Math.max(link.from.y, link.to.y);
-            final int k = (minY * 40 + minX) * 10000 + (maxY * 40 + maxX);
-            if (res.get(k) != null) {
-                res.replace(k, 2);
-            }
-            else {
-                res.put(k, 1);
-            }
+            graph.obvious.stream().forEach(l -> {
+                activeLinks[l.id] = true;
+            });
         }
 
-        res.entrySet().stream().forEach(e -> {
-            int k = e.getKey();
-            final int minX = (k / 10000) % 40;
-            final int minY = (k / 10000) / 40;
-            final int maxX = (k % 10000) % 40;
-            final int maxY = (k % 10000) / 40;
-            System.out.println(String.format("%d %d %d %d %d", minX, minY, maxX, maxY, e.getValue()));
-        });
-    }
-
-    private boolean willCrossActiveLink(final Link operation) {
-        for (int i = 0; i < operation.crosses.size(); ++i) {
-            if (activeLinks[operation.crosses.get(i)]) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean tryCommitOperation(final Link link) {
-        if (!link.isActivable()) {
-            return false;
-        }
-
-        if (link.crosses.size() > 0 && willCrossActiveLink(link)) {
-            return false; // <== operation would cross a edge
-        }
-
-        activeLinks[link.id] = true;
-        link.activate();
-
-        return true;
-    }
-
-    private void rollbackOperation(final Link link) {
-        link.deactivate();
-        activeLinks[link.id] = false;
-    }
-
-    private int copylinks(final ArrayList<Link> from, final int base) {
-        int i = 0;
-        for (; i < from.size(); ++i) {
-            links[base+i] = from.get(i);
-        }
-        return base+i;
-    }
-
-    public void play()  {
-        int total = graph.total;
-        int maxSp = 0;
-
-        if (total == 0) {
-            dumpStack();
-        }
-        for (int i = 0; i < graph.nodes.size(); ++i) {
-            final Node root = graph.nodes.get(i);
-            final int stopPos = copylinks(root.links, 0);
-            activeNodes[root.id] = true;
-            ++sp;
-            stackId[sp] = ctxtNextId++;
-            stackOp[sp] = null;
-            stackNode[sp] = root;
-            stackStartPos[sp] = 0;
-            stackStopPos[sp] = stopPos;
-            while(total > 0 && sp >= 0) {
-                if (stackStartPos[sp] == stackStopPos[sp]) {
-                    if (stackOp[sp] != null) {
-                        rollbackOperation(stackOp[sp]);
-                        total += 2;
-                    }
-
-                    if (stackNode[sp] != null) {
-                        activeNodes[stackNode[sp].id] = false;
-                    }
-
-                    --sp;
-                    continue; // <==
-                }
-
-                final Link choice = links[stackStartPos[sp]++];
-                if (!tryCommitOperation(choice)) {
-                    continue; // <==
-                }
-
-                final Node target = choice.to;
-                Node nextNode = null;
-                int newStopPos;
-                if (isNodeInStack(target)) {
-                    newStopPos = stackStopPos[sp];
-                }
-                else {
-                    nextNode = target;
-                    newStopPos = copylinks(target.links, stackStopPos[sp]);
-                    activeNodes[target.id] = true;
-                }
-                total -= 2;
-                ++sp;
-                maxSp = Math.max(maxSp, sp);
-                stackId[sp] = ctxtNextId++;
-                stackOp[sp] = choice;
-                stackNode[sp] = nextNode;
-                stackStartPos[sp] = stackStartPos[sp-1];
-                stackStopPos[sp] = newStopPos;
-            }
+        public void solve()  {
+            int total = graph.total;
+            int maxSp = 0;
 
             if (total == 0) {
                 dumpStack();
-                break; // <==
             }
-            activeNodes[root.id] = false;
+            for (int i = 0; i < graph.nodes.size(); ++i) {
+                final Node root = graph.nodes.get(i);
+                final int stopPos = copylinks(root.links, 0);
+                activeNodes[root.id] = true;
+                ++sp;
+                stackId[sp] = ctxtNextId++;
+                stackOp[sp] = null;
+                stackNode[sp] = root;
+                stackStartPos[sp] = 0;
+                stackStopPos[sp] = stopPos;
+                while(total > 0 && sp >= 0) {
+                    if (stackStartPos[sp] == stackStopPos[sp]) {
+                        if (stackOp[sp] != null) {
+                            rollbackOperation(stackOp[sp]);
+                            total += 2;
+                        }
+
+                        if (stackNode[sp] != null) {
+                            activeNodes[stackNode[sp].id] = false;
+                        }
+
+                        --sp;
+                        continue; // <==
+                    }
+
+                    final Link choice = links[stackStartPos[sp]++];
+                    if (!tryCommitOperation(choice)) {
+                        continue; // <==
+                    }
+
+                    final Node target = choice.to;
+                    Node nextNode = null;
+                    int newStopPos;
+                    if (isNodeInStack(target)) {
+                        newStopPos = stackStopPos[sp];
+                    }
+                    else {
+                        nextNode = target;
+                        newStopPos = copylinks(target.links, stackStopPos[sp]);
+                        activeNodes[target.id] = true;
+                    }
+                    total -= 2;
+                    ++sp;
+                    maxSp = Math.max(maxSp, sp);
+                    stackId[sp] = ctxtNextId++;
+                    stackOp[sp] = choice;
+                    stackNode[sp] = nextNode;
+                    stackStartPos[sp] = stackStartPos[sp-1];
+                    stackStopPos[sp] = newStopPos;
+                }
+
+                if (total == 0) {
+                    dumpStack();
+                    break; // <==
+                }
+                activeNodes[root.id] = false;
+            }
         }
+
+        private boolean isNodeInStack(final Node node) {
+            return activeNodes[node.id];
+        }
+
+        private void dumpStack() {
+            final HashMap<Integer, Integer> res = new HashMap<>();
+            for (int i = 0; i < graph.obvious.size(); ++i) {
+                final Link link = graph.obvious.get(i);
+                final int minX = Math.min(link.from.x, link.to.x);
+                final int maxX = Math.max(link.from.x, link.to.x);
+                final int minY = Math.min(link.from.y, link.to.y);
+                final int maxY = Math.max(link.from.y, link.to.y);
+                final int k = (minY * 40 + minX) * 10000 + (maxY * 40 + maxX);
+                if (res.get(k) != null) {
+                    res.replace(k, 2);
+                }
+                else {
+                    res.put(k, 1);
+                }
+            }
+            
+            for (int i = 1; i <= sp; ++i) {
+                final Link link = stackOp[i];
+                final int minX = Math.min(link.from.x, link.to.x);
+                final int maxX = Math.max(link.from.x, link.to.x);
+                final int minY = Math.min(link.from.y, link.to.y);
+                final int maxY = Math.max(link.from.y, link.to.y);
+                final int k = (minY * 40 + minX) * 10000 + (maxY * 40 + maxX);
+                if (res.get(k) != null) {
+                    res.replace(k, 2);
+                }
+                else {
+                    res.put(k, 1);
+                }
+            }
+
+            res.entrySet().stream().forEach(e -> {
+                int k = e.getKey();
+                final int minX = (k / 10000) % 40;
+                final int minY = (k / 10000) / 40;
+                final int maxX = (k % 10000) % 40;
+                final int maxY = (k % 10000) / 40;
+                System.out.println(String.format("%d %d %d %d %d", minX, minY, maxX, maxY, e.getValue()));
+            });
+        }
+
+        private boolean willCrossActiveLink(final Link operation) {
+            for (int i = 0; i < operation.crosses.size(); ++i) {
+                if (activeLinks[operation.crosses.get(i)]) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private boolean tryCommitOperation(final Link link) {
+            if (!link.isActivable()) {
+                return false;
+            }
+
+            if (link.crosses.size() > 0 && willCrossActiveLink(link)) {
+                return false; // <== operation would cross a edge
+            }
+
+            activeLinks[link.id] = true;
+            link.activate();
+
+            return true;
+        }
+
+        private void rollbackOperation(final Link link) {
+            link.deactivate();
+            activeLinks[link.id] = false;
+        }
+
+        private int copylinks(final ArrayList<Link> from, final int base) {
+            int i = 0;
+            for (; i < from.size(); ++i) {
+                links[base+i] = from.get(i);
+            }
+            return base+i;
+        }
+
+        private final Hashiwokakero graph;
+        private final boolean[] activeNodes;
+        private final boolean[] activeLinks;
+        private int ctxtNextId = 0;
+        private final Link[] links = new Link[31*31*4];
+
+        private final int[] stackId = new int[1000];
+        private final Link[] stackOp = new Link[1000];
+        private final Node[] stackNode = new Node[1000];
+        private final int[] stackStartPos = new int[1000];
+        private final int[] stackStopPos = new int[1000];
+        private int sp = -1;
     }
 
     public static void main(String args[]) {
@@ -598,8 +600,8 @@ class Player {
         System.err.println(String.format("Build graph in : %f ms", (System.nanoTime()-graphStartTime)/1000000.0));
 
         final long solveStartTime = System.nanoTime();
-        final Player player = new Player(graph);
-        player.play();
+        final Solver player = new Solver(graph);
+        player.solve();
         System.err.println(String.format("Solved in in : %f ms", (System.nanoTime()-solveStartTime)/1000000.0));
     }
 }
