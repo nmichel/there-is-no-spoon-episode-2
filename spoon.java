@@ -91,6 +91,20 @@ class Player {
             return true; // <== found one edge crossing
         }
 
+        public boolean isActivable() {
+            return from.getDelta() > 0 && to.getDelta() > 0;
+        }
+
+        public void activate() {
+            ++from.current;
+            ++to.current;
+        }
+
+        public void deactivate() {
+            --from.current;
+            --to.current;
+        }
+
         public final int id;
         public final Node from;
         public final Node to;
@@ -137,6 +151,10 @@ class Player {
 
         public void removeAlllinks() {
             links.clear();
+        }
+
+        public int getDelta() {
+            return target - current;
         }
 
         public final int id;
@@ -199,6 +217,7 @@ class Player {
 
             graph.collectAllLinks();
             graph.buildCrosses();
+            graph.optimize();
 
             return graph;
         }
@@ -239,14 +258,13 @@ class Player {
             });
         }
 
-        private boolean tryThreeToOneNode(final Node e, ArrayList<Link> out) {
+        private boolean tryThreeToOneNode(final Node e) {
             final ArrayList<Link> res = new ArrayList<>();
-            final int delta = (e.target - e.current);
-            if (delta == 3 && e.links.size() == 2) {
+            if (e.getDelta() == 3 && e.links.size() == 2) {
                 Link match = e.links.get(0);
-                if ((match.to.target - match.to.current) != 1) {
+                if (match.to.getDelta() != 1) {
                     match = e.links.get(1);
-                    if ((match.to.target - match.to.current) != 1) {
+                    if (match.to.getDelta() != 1) {
                         match = null;
                     }
                 }
@@ -257,8 +275,7 @@ class Player {
                 total -= 2;
 
                 res.add(match);
-                match.from.current++;
-                match.to.current++;
+                match.activate();
             }            
 
             res.stream().forEach(l -> {
@@ -269,21 +286,19 @@ class Player {
                 });
             });
 
-            out.addAll(res);
+            obvious.addAll(res);
 
             return res.size() > 0;
         }
 
-        private boolean tryIsolatedOneNode(final Node e, ArrayList<Link> out) {
+        private boolean tryIsolatedOneNode(final Node e) {
             final ArrayList<Link> res = new ArrayList<>();
-            final int delta = (e.target - e.current);
-            if (delta == 1 && e.links.size() == 1) {
+            if (e.getDelta() == 1 && e.links.size() == 1) {
                 total -= 2;
                 final Link linkOut = e.links.get(0);
                 e.links.clear();
                 res.add(linkOut);
-                linkOut.from.current++;
-                linkOut.to.current++;
+                linkOut.activate();
 
                 final Link ol = linkOut.to.removeLink(e);
             }            
@@ -296,26 +311,24 @@ class Player {
                 });
             });
 
-            out.addAll(res);
+            obvious.addAll(res);
 
             return res.size() > 0;
         }
 
-        private boolean tryFullNodeCase(final Node e, final ArrayList<Link> out) {
+        private boolean tryFullNodeCase(final Node e) {
             final ArrayList<Link> res = new ArrayList<>();
-            final int delta = (e.target - e.current);
+            final int delta = e.getDelta();
             if (delta > 0 && delta == e.links.size()*2) {
                 total -= delta*2;
                 e.links.stream().forEach(l -> {
                     res.add(l);
-                    l.from.current++;
-                    l.to.current++;
+                    l.activate();
 
                     final Link ol = l.to.removeLink(e);
                     if (null != ol) {
                         res.add(ol);
-                        ol.from.current++;
-                        ol.to.current++;
+                        ol.activate();
                     }
                 });
                 e.removeAlllinks();
@@ -329,60 +342,58 @@ class Player {
                 });
             });
 
-            out.addAll(res);
+            obvious.addAll(res);
 
             return res.size() > 0;
         }
 
-        boolean action = false;
-
-        private boolean tryQuiteFullNodeCase(final Node e, final ArrayList<Link> out) {
+        private boolean tryQuiteFullNodeCase(final Node e) {
             final ArrayList<Link> res = new ArrayList<>();
-            action = false;
+            boolean action = false;
 
-            final int delta = (e.target - e.current);
+            final int delta = e.getDelta();
             if (delta > 0 && delta == e.links.size()*2-1) {
                 e.links.stream().forEach(l -> {
                     res.add(l);
                 });
             }
 
-            res.stream().forEach(l -> {
-                l.crosses.forEach(lid -> {
+            for (final Link l : res) {
+                for (final int lid : l.crosses) {
                     final Link cross = links.get(lid);
                     final Node node = cross.from;
                     if (node.removeLink(cross) != null) {
                         action = true;
                     }
-                });
-            });
+                }
+            }
 
             return action;
         }
 
+        private final List<Function<Node, Boolean>> heuristics = Arrays.asList(this::tryFullNodeCase,
+                                                                               this::tryIsolatedOneNode,
+                                                                               this::tryThreeToOneNode,
+                                                                               this::tryQuiteFullNodeCase);
+
         private boolean findObviousCases() {
-            List<BiFunction<Node, ArrayList<Link>, Boolean>> heuristics = Arrays.asList(this::tryFullNodeCase, this::tryIsolatedOneNode, this::tryThreeToOneNode, this::tryQuiteFullNodeCase);
-            ArrayList<Link> res = new ArrayList<>();
-            boolean finalDone = false;
+            boolean done = false;
             for (int i = 0; i < nodes.size(); ++i) {
-                boolean done = false;
                 final Node e = nodes.get(i);
-                for (BiFunction<Node, ArrayList<Link>, Boolean> f : heuristics) {
-                    done |= f.apply(e, res);
-                    if (done) {
-                        finalDone = true;
+                for (Function<Node, Boolean> f : heuristics) {
+                    if (f.apply(e)) {
+                        done = true;
                         break; // <== 
                     }
                 }
             }
-            obvious.addAll(res);
-            return finalDone;
+            return done;
         }
 
-        void cleanFullNodes() {
+        private void cleanFullNodes() {
             nodes
                 .stream()
-                .filter(n -> (n.target - n.current) == 0 && n.links.size() > 0)
+                .filter(n -> n.getDelta() == 0 && n.links.size() > 0)
                 .forEach(n -> {
                     n.links.stream().forEach(l -> {
                         l.to.removeLink(n);
@@ -391,10 +402,10 @@ class Player {
                 });
         }
 
-        void removeIsolatedNodes() {
+        private void removeIsolatedNodes() {
             nodes = nodes
                 .stream()
-                .filter(n -> (n.target - n.current) > 0)
+                .filter(n -> n.getDelta() > 0)
                 .collect(Collectors.toCollection(ArrayList::new));
         }
 
@@ -419,16 +430,13 @@ class Player {
     private final int[] stackStopPos = new int[1000];
     private int sp = -1;
 
-    public Player(final Hashiwokakero graph) {
-        this.graph = graph;
+    public Player(final Hashiwokakero hashi) {
+        graph = hashi;
         activeNodes = new boolean[graph.width * graph.height];
-        for (int i = 0; i < activeNodes.length; ++i) {
-            activeNodes[i] = false;
-        }
         activeLinks = new boolean[graph.width * graph.height * 4];
-        for (int i = 0; i < activeLinks.length; ++i) {
-            activeLinks[i] = false;
-        }
+
+        Arrays.fill(activeNodes, false);
+        Arrays.fill(activeLinks, false);
 
         graph.obvious.stream().forEach(l -> {
             activeLinks[l.id] = true;
@@ -481,7 +489,7 @@ class Player {
         });
     }
 
-    boolean willCrossActiveLink(final Link operation) {
+    private boolean willCrossActiveLink(final Link operation) {
         for (int i = 0; i < operation.crosses.size(); ++i) {
             if (activeLinks[operation.crosses.get(i)]) {
                 return true;
@@ -490,9 +498,9 @@ class Player {
         return false;
     }
 
-    boolean tryCommitOperation(final Link link) {
-        if (link.from.current == link.from.target || link.to.current == link.to.target) {
-            return false; // <== source and/or target node are "full"
+    private boolean tryCommitOperation(final Link link) {
+        if (!link.isActivable()) {
+            return false;
         }
 
         if (link.crosses.size() > 0 && willCrossActiveLink(link)) {
@@ -500,24 +508,22 @@ class Player {
         }
 
         activeLinks[link.id] = true;
-        ++link.from.current;
-        ++link.to.current;
+        link.activate();
 
         return true;
     }
 
-    void rollbackOperation(final Link link) {
-        --link.from.current;
-        --link.to.current;
+    private void rollbackOperation(final Link link) {
+        link.deactivate();
         activeLinks[link.id] = false;
     }
 
-    private int copylinks(final ArrayList<Link> from, final int pos) {
+    private int copylinks(final ArrayList<Link> from, final int base) {
         int i = 0;
         for (; i < from.size(); ++i) {
-            links[pos+i] = from.get(i);
+            links[base+i] = from.get(i);
         }
-        return pos+i;
+        return base+i;
     }
 
     public void play()  {
@@ -589,7 +595,6 @@ class Player {
     public static void main(String args[]) {
         final long graphStartTime = System.nanoTime();
         final Hashiwokakero graph = Hashiwokakero.buildGraphFromInput();
-        graph.optimize();
         System.err.println(String.format("Build graph in : %f ms", (System.nanoTime()-graphStartTime)/1000000.0));
 
         final long solveStartTime = System.nanoTime();
